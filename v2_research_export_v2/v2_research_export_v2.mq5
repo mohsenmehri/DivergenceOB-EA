@@ -961,6 +961,7 @@ input ENUM_PIVOT_CONFIG inp_pivot_zone_config_2 = PIVOT_DONT_CARE;
 input ENUM_PIVOT_CONFIG inp_pivot_zone_config_3 = PIVOT_DONT_CARE;
 input group "=============== Risk Management ==============="
 input double   inp_max_loss_dollars  = 300.0;
+input double   inp_broker_protection_sl_atr = 0.0;  // FIX-E2: 0=off (keeps backtest parity); >0 = wide broker-side disaster SL at N*ATR on every entry (recommend >= 4.0 for live)
 input int      inp_atr_period        = 4;
 input double   inp_atr_multiplier    = 2.5;
 input int      inp_rsi_period        = 14;
@@ -19260,6 +19261,28 @@ bool CreateSetupWithPrediction(bool is_bull, double &ent[], double &be[], double
       TryGetLatestSetupPositionFill(g_setups[idx].setup_id, expected_lot, fill_price, fill_time);
       g_setups[idx].step_times[0]  = fill_time;
       g_setups[idx].step_prices[0] = fill_price;
+      // FIX-E1 (audit 2026-09-04): step-1 is a market order on the first tick of the new bar,
+      // so the real fill can differ from the planned bar-1 extreme (ent[0]). Re-anchor every
+      // engineered level (steps 2-5, BE, TP, smart target) by the realized delta so that grid
+      // geometry, R:R and exports match the ACTUAL entry, not the fictional level entry.
+      double anchor_delta = fill_price - ent[0];
+      if(MathAbs(anchor_delta) >= _Point)
+      {
+         for(int s = 0; s < 5; s++)       g_setups[idx].stop_levels[s]      += anchor_delta;
+         for(int b = 0; b < 4; b++)       g_setups[idx].break_even_levels[b] += anchor_delta;
+         for(int t = 0; t < 5; t++)       g_setups[idx].target_levels[t]     += anchor_delta;
+         g_setups[idx].is_above_ema200 = (ema200 > 0 && fill_price > ema200);
+         if(ema200 > 0)
+         {
+            bool counter_ema2 = (is_bull && fill_price <= ema200) || (!is_bull && fill_price >= ema200);
+            g_setups[idx].use_ema200_as_target = (inp_use_counter_ema200_target && counter_ema2);
+         }
+         g_current_smart_target.Initialize(fill_price,
+                                           g_setups[idx].target_levels[0],
+                                           g_setups[idx].target_levels[1],
+                                           g_setups[idx].target_levels[2],
+                                           ema200, init_target);
+      }
       // v9.21: record position-open research snapshot (step 1)
       RecordPositionOpenBySetup(idx, 1,
                                 GetLatestSetupPositionId(g_setups[idx].setup_id),
@@ -19332,6 +19355,41 @@ bool PlaceEntry(int id, bool is_long, int step)
       if(ok)
       {
          Print(">> ", (is_long ? "BUY" : "SELL"), " Step ", step, "| Lot: ", lot);
+         if(inp_broker_protection_sl_atr > 0.0)
+         {
+            // FIX-E2 (audit 2026-09-04): best-effort broker-side protective stop placed on
+            // every new position (steps 1-5). The EA manages exits in-tick (SL_DOLLAR /
+            // net-basket BE / nominal TP / trail), so this SL is only a WIDE disaster stop
+            // that must sit beyond every EA exit level; it protects the account when the
+            // EA/terminal cannot act (crash, disconnect, hang). 0 = disabled.
+            double atr_p = g_tf[0].GetBufferValue(g_tf[0].buffer_atr, 1);
+            if(atr_p <= 0.0) atr_p = SymbolInfoDouble(_Symbol, SYMBOL_POINT) * 100.0;
+            MqlTick pt;
+            if(SymbolInfoTick(_Symbol, pt))
+            {
+               double guard   = inp_broker_protection_sl_atr * atr_p;
+               double sl_p    = is_long ? (pt.bid - guard) : (pt.ask + guard);
+               sl_p = NormalizeDouble(sl_p, _Digits);
+               for(int pi = 0; pi < PositionsTotal(); pi++)
+               {
+                  ulong ptk = PositionGetTicket(pi);
+                  if(ptk == 0) continue;
+                  if(PositionGetString(POSITION_SYMBOL) != _Symbol) continue;
+                  if(PositionGetInteger(POSITION_MAGIC) != (long)inp_magic_number) continue;
+                  if(PositionGetString(POSITION_COMMENT) != comment) continue;
+                  if(!g_trade.PositionModify(ptk, sl_p, 0.0))
+                  {
+                     static datetime last_sl_warn = 0;
+                     if(TimeCurrent() - last_sl_warn > 60)
+                     {
+                        LogWarning("Broker protection SL modify failed for " + comment);
+                        last_sl_warn = TimeCurrent();
+                     }
+                  }
+                  break;
+               }
+            }
+         }
          return true;
       }
       uint code = g_trade.ResultRetcode();
@@ -19361,13 +19419,13 @@ bool PlaceEntry(int id, bool is_long, int step)
          code == TRADE_RETCODE_TIMEOUT ||
          code == TRADE_RETCODE_TOO_MANY_REQUESTS)
       {
-         Sleep(400 * (att + 1));
+         if(!MQLInfoInteger(MQL_TESTER)) Sleep(400 * (att + 1));
          MqlTick tick;
          SymbolInfoTick(_Symbol, tick);
          continue;
       }
       // سایر کدها: یک retry کوتاه، بعد خروج
-      Sleep(300 * (att + 1));
+      if(!MQLInfoInteger(MQL_TESTER)) Sleep(300 * (att + 1));
    }
    return false;
 }
@@ -42250,7 +42308,7 @@ void ManagePositions(int idx)
                Print("Market closed during Step ", next, " entry attempts");
                return;
             }
-            Sleep(500 * attempts);
+            if(!MQLInfoInteger(MQL_TESTER)) Sleep(500 * attempts);
          }
       }
       if(success)
@@ -42834,7 +42892,7 @@ void CloseSetupWithReason(int idx, string reason)
       double realized = 0.0;
       for(int attempt = 0; attempt < 5; attempt++)
       {
-         Sleep(200 * (attempt + 1));
+         if(!MQLInfoInteger(MQL_TESTER)) Sleep(200 * (attempt + 1));
          realized = CalcHistProfit(g_setups[idx].setup_id, g_setups[idx].created_time);
          if(MathAbs(realized) > 0.0000001)
             break;
@@ -44350,6 +44408,11 @@ bool LoadPersistentState()
 }
 int OnInit()
 {
+   // FIX-D1 (audit 2026-09-04): make DIV3 signal-mode semantics explicit at startup.
+   if(inp_div3_signal_mode == DIV3_LIVE_P3_ONLY)
+      Print("WARNING|DIV3_LIVE_P3_ONLY is DISPLAY-ONLY: the confirmed stream is disabled inside CheckDivergence() and live arms are never consumable - this mode opens NO trades.");
+   else if(inp_div3_signal_mode == DIV3_DUAL_MODE)
+      Print("NOTE|DIV3_DUAL_MODE trades ONLY the confirmed stream; live display arms never open positions.");
    g_symbol_name = _Symbol;
    g_lang = GetLanguageStrings();
    g_testing = MQLInfoInteger(MQL_TESTER);

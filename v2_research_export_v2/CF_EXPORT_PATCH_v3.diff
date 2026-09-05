@@ -1,5 +1,5 @@
 diff --git a/v2_research_export_v2/v2_research_export_v2_cf.mq5 b/v2_research_export_v2/v2_research_export_v2_cf.mq5
-index c3e78e5..e599b1b 100644
+index c3e78e5..f0f08a6 100644
 --- a/v2_research_export_v2/v2_research_export_v2_cf.mq5
 +++ b/v2_research_export_v2/v2_research_export_v2_cf.mq5
 @@ -19210,7 +19210,28 @@ void ExportPositionOpenSummaryReport()
@@ -63,7 +63,7 @@ index c3e78e5..e599b1b 100644
 +      }
 +      Print("CF_EXPORT_OPEN_OK|File=", CF_FullExportPath(g_cf_fname),
 +            "|Handle=", IntegerToString(g_cf_fh));
-+      int hdr_bytes = FileWriteString(g_cf_fh,
++      uint hdr_bytes = FileWriteString(g_cf_fh,
              "Event;SetupID;DecisionTime;StepFrom;StepTo;Direction;Bid;Ask;SpreadPoints;"
              "ATR;ATRPct100;ATRRegime;ADX;DIPlus;DIMinus;RSI;MACDHist;EMA200DistATR;EMA200Slope5ATR;"
              "FloatingPnLNoCost;OpenPositions;BasketBE;Session;OpenHour;Mode;Rule;FillPrice;FillTime\n");
@@ -88,7 +88,7 @@ index c3e78e5..e599b1b 100644
 -   static int cf_rows = 0;
 -   cf_rows++;
 -   if((cf_rows % 500) == 0) FileFlush(fh);
-+   int wb = FileWriteString(g_cf_fh, row + "\n");
++   uint wb = FileWriteString(g_cf_fh, row + "\n");
 +   if(wb > 0)
 +   {
 +      g_cf_rows++;

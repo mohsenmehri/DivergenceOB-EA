@@ -19287,7 +19287,7 @@ void CF_LogEvent(int setup_idx, int step_from, int step_to, bool is_bull,
       }
       Print("CF_EXPORT_OPEN_OK|File=", CF_FullExportPath(g_cf_fname),
             "|Handle=", IntegerToString(g_cf_fh));
-      int hdr_bytes = FileWriteString(g_cf_fh,
+      uint hdr_bytes = FileWriteString(g_cf_fh,
             "Event;SetupID;DecisionTime;StepFrom;StepTo;Direction;Bid;Ask;SpreadPoints;"
             "ATR;ATRPct100;ATRRegime;ADX;DIPlus;DIMinus;RSI;MACDHist;EMA200DistATR;EMA200Slope5ATR;"
             "FloatingPnLNoCost;OpenPositions;BasketBE;Session;OpenHour;Mode;Rule;FillPrice;FillTime\n");
@@ -19365,7 +19365,7 @@ void CF_LogEvent(int setup_idx, int step_from, int step_to, bool is_bull,
       + IntegerToString(dt.hour) + ";" + IntegerToString(inp_cf_mode) + ";" + rule + ";"
       + DoubleToString(fill_price, _Digits) + ";"
       + (fill_time > 0 ? TimeToString(fill_time, TIME_DATE | TIME_SECONDS) : "");
-   int wb = FileWriteString(g_cf_fh, row + "\n");
+   uint wb = FileWriteString(g_cf_fh, row + "\n");
    if(wb > 0)
    {
       g_cf_rows++;

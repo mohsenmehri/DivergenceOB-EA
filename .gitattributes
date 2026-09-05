@@ -2,3 +2,7 @@
 *.xlsx filter=lfs diff=lfs merge=lfs -text
 *.log filter=lfs diff=lfs merge=lfs -text
 v2_research_export_v1_CONTROL_REGEN_A1/*.csv -filter -diff -merge -text
+
+v2_research_export_v2_cf/*.csv -filter -diff -merge -text
+
+v2_research_export_v2_cf/*.xlsx -filter -diff -merge -text

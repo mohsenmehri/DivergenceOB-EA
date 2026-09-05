@@ -1,3 +1,6 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:0714d7af0a65b8dbebed6d4dd1a7252618d7a83ee1edd91fdcbb90cbbbdbc445
-size 532
+﻿sep=,
+Profile,Selected,LiveArmed,TotalSignals,Entries,RejectedStructure,RejectedRSI,RejectedRegime,RejectedVolatility,Step1,Step2,Step3,Step4,Step5,Completed,Stops,StopRate,Deep4Plus,DeepRate,TotalPnL
+A_STRUCTURE,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.000000,0,0.000000,0.00
+B_STRUCTURE_RSI,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.000000,0,0.000000,0.00
+C_STRUCTURE_RSI_REGIME,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.000000,0,0.000000,0.00
+D_FULL,1,49304,12976,4864,3189,1722,2994,207,4864,2970,1149,431,191,4863,88,1.809583,431,8.862842,-626.69

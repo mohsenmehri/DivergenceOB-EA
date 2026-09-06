@@ -4,5 +4,9 @@
 v2_research_export_v1_CONTROL_REGEN_A1/*.csv -filter -diff -merge -text
 
 v2_research_export_v2_cf/*.csv -filter -diff -merge -text
-
 v2_research_export_v2_cf/*.xlsx -filter -diff -merge -text
+
+# Agent-visible M1 regression data: keep these outputs as normal Git blobs
+v2_research_export_v2_c-M1/*.csv -filter -diff -merge -text
+v2_research_export_v2_c-M1/*.xlsx -filter -diff -merge -text
+v2_research_export_v2_c-M1/*.txt -filter -diff -merge -text

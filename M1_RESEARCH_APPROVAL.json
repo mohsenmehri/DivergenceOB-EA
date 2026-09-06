@@ -1,0 +1,49 @@
+{
+  "STATUS": "RESEARCH APPROVAL REGISTERED",
+  "REGISTERED_AT": "2026-09-06",
+  "REGISTERED_BY": "project owner decision",
+  "DECISION_TYPE": "research-continuation approval under explicit DECISION ASSUMPTION — NOT a performance-edge proof, NOT a performance verdict",
+  "OFFICIAL_STATE": {
+    "M1_STATUS": "APPROVED FOR RESEARCH CONTINUATION",
+    "M1_DATA_STATUS": "COVERAGE ASSUMED COMPLETE THROUGH CUTOFF",
+    "M1_OBSERVED_EXPORT": "TRUNCATED AT 2026-08-17 22:27:04",
+    "M1_CUTOFF_ASSUMPTION": "2026-08-18 23:59:58 (assumption, NOT observed fact)",
+    "M1_THRESHOLD_FROZEN": 0.06754475,
+    "M1_RERUN_REQUIRED": "NO",
+    "PRODUCTION": "M0",
+    "PRODUCTION_CHANGE": "NONE"
+  },
+  "HARD_LIMITS": {
+    "no_rule_change": true,
+    "no_threshold_retune_or_sweep": true,
+    "no_latch_or_new_behavior": true,
+    "no_strategy_change": true,
+    "no_entry_exit_management_change": true,
+    "no_fabrication": "Missing rows/trades/PnL/events/lifecycle/fills/outcomes in the unobserved window (2026-08-17 22:27:04 .. 2026-08-18 23:59:58) must never be fabricated, reconstructed, or claimed row-by-row equal; no observed-completeness claim may be made."
+  },
+  "EVIDENCE_CLASSIFICATION": {
+    "OBSERVED_GRADE_empirical_within_observed_export": [
+      "Implementation fidelity: fate == eligibility for all 117 eligible attempts (104 delayed-fill + 13 blocked); 0 violations",
+      "Threshold actually used == 0.06754475 (bracket proof: min ATR over V rows = 0.067553, max ATR over P rows = 0.067528)",
+      "Rule scoping: all 149,402 V rows are Step3->4 only; Mode=1 throughout; Rule=M1",
+      "Canonical event semantics: 433 distinct attempts = 419 placed/filled + 14 V-only; 118 veto cohorts = 104 delayed + 14 V-only",
+      "Veto mechanics: 89% of veto cohorts resolve within minutes (median dwell 7 min, p90 89 min) — mechanism is delay-dominated, not persistent block",
+      "Control-cohort isolation: 4,723/4,723 non-affected aligned setups bit-identical M0 vs M1 (identity anchored on Step1 time+price, direction-verified)",
+      "Affected-cohort paired causal estimates (n=117): all M1-side exits present in observed export (export ends 2026-08-17 22:49:17 lifecycle) — e.g. paired sumDelta = -499.37; blocked-13 = +415.22; delayed-104 = -914.59"
+    ],
+    "DATA_LIMITED__ASSUMPTION_BASED_not_empirical_evidence": [
+      "Any full-window/global M1 aggregate at cutoff C (net, PF, MaxDD, SL$, exit-class totals) — M1 side misses the final ~25h33m of realizations",
+      "Anything about final-day setups 4863/4864-equivalents and the 11 M0-side gap events (2 Step1, 2x(1->2) A/P/F, 1x(2->3) A/P/F)",
+      "Terminal Step4/Step5 counts AT the cutoff",
+      "Any PnL/exit of baskets still open at 2026-08-17 22:27:04",
+      "M0-side final ~4h (observed export ends 2026-08-18 19:57:18) is likewise unobserved for symmetric global-at-C views"
+    ]
+  },
+  "PERFORMANCE_VERDICT": "STILL NOT ISSUED. Exploratory analyses from the incomplete run remain exploratory; under this approval they may be cited ONLY as: observed-grade = empirical within observed export; anything else = DATA-LIMITED / ASSUMPTION-BASED. This approval is not evidence of performance edge.",
+  "PROVENANCE": {
+    "chain": "freeze (234dc6b) -> close-out (f4fd889) -> this research approval",
+    "data_branch": "agent-regression-data-real @ f349093b5137f63ed7e9cf8b4833d86f76b9421c (unchanged)",
+    "m1_events_blob": "28e58f270cd5864458fdd065b0c2a1d5a2e97440",
+    "threshold_frozen_commit": "234dc6bc3d8202a05cf4de072190d0745cf4ccb5"
+  }
+}

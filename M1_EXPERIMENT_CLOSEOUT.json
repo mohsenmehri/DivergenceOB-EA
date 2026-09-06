@@ -1,0 +1,47 @@
+{
+  "STATUS": "CLOSE-OUT REGISTERED",
+  "REGISTERED_AT": "2026-09-06",
+  "REGISTERED_BY": "project owner confirmation of Agent-1 completeness verdict",
+  "EXPERIMENT": "M1 Smart Ladder — Step3->4 volatility-regime VETO (ATRpct >= 0.06754475)",
+  "DATA_COMPLETENESS": "FAIL",
+  "PERFORMANCE_VERDICT": "NOT ISSUED",
+  "REASON": "M1 export stops before cutoff; consistent with run/export truncation (NOT a proven abort cause)",
+  "LAST_M1_EVENT": "2026-08-17 22:27:04",
+  "CUTOFF": "2026-08-18 23:59:58",
+  "COVERAGE_GAP": "1 day 01:32:54 (~25h33m)",
+  "TRUNCATED_STREAMS": {
+    "events": "2026-08-17 22:27:04",
+    "lifecycle": "2026-08-17 22:49:17",
+    "position_open_dataset": "2026-08-17 22:27:04"
+  },
+  "MISSING_FINAL_DAY": {
+    "setups": ["4863 (2026-08-18 04:11:00)", "4864 (2026-08-18 13:04:00)"],
+    "m0_activity_in_gap_rows": 11,
+    "step3_to_4_attempts_in_gap": 0
+  },
+  "CANONICAL_EVENT_SEMANTICS": {
+    "V_rows": "tick-dwell observations (149,402) — NOT independent decisions; never counted as blocked trades",
+    "distinct_step3_to_4_attempts": 433,
+    "attempts_decomposition": "433 = 419 placed/filled + 14 V-only",
+    "distinct_veto_cohorts": 118,
+    "veto_cohorts_decomposition": "118 = 104 (veto then delayed fill) + 14 (veto, no fill through export end)",
+    "note": "'118 vetoes' never means '118 blocked trades'"
+  },
+  "SUPERSEDURE": "All prior M1 performance/causal/statistical/DEV-OOS outputs on this incomplete run are EXPLORATORY ONLY and must not serve as basis for ACCEPT or REJECT of M1. Prior exploratory verdicts are voided as evidence.",
+  "STANDING_STATE": {
+    "Production": "M0 (unchanged)",
+    "M1": "PENDING COMPLETE RERUN",
+    "Frozen_M1_threshold": 0.06754475,
+    "Retune": "NONE",
+    "Strategy_change": "NONE",
+    "Production_deployment": "NONE"
+  },
+  "UNLOCK_CONDITION": "A complete M1 rerun whose events/lifecycle/PO exports cover through the cutoff (min: >= M0 coverage end 2026-08-18 19:57:18 incl. final-day setups 4863/4864-equivalents; preferably >= 2026-08-18 23:59:58), Mode=1, same frozen threshold, no latch/new behavior. On arrival of complete data: re-run Task 1 (Data Completeness); performance analysis (Tasks 2-7) starts ONLY if Task 1 PASSes.",
+  "PROVENANCE": {
+    "data_branch": "agent-regression-data-real",
+    "data_commit": "f349093b5137f63ed7e9cf8b4833d86f76b9421c (unchanged; no rerun data pushed)",
+    "m1_events_blob": "28e58f270cd5864458fdd065b0c2a1d5a2e97440",
+    "freeze_artifact": "M1_THRESHOLD_FREEZE_POSTHOC.json @ 234dc6bc3d8202a05cf4de072190d0745cf4ccb5",
+    "related": "POST-HOC RE-FROZEN M1 THRESHOLD (not the historical threshold)"
+  }
+}

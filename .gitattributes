@@ -10,3 +10,10 @@ v2_research_export_v2_cf/*.xlsx -filter -diff -merge -text
 v2_research_export_v2_c-M1/*.csv -filter -diff -merge -text
 v2_research_export_v2_c-M1/*.xlsx -filter -diff -merge -text
 v2_research_export_v2_c-M1/*.txt -filter -diff -merge -text
+
+v2_research_export_v2_cfv2/*.csv -filter -diff -merge -text
+v2_research_export_v2_cfv2/*.xlsx -filter -diff -merge -text
+v2_research_export_v2_cfv2/*.log -filter -diff -merge -text
+v2_research_export_v2_cfv2/*.csv -filter -diff -merge -text
+v2_research_export_v2_cfv2/*.xlsx -filter -diff -merge -text
+v2_research_export_v2_cfv2/*.log -filter -diff -merge -text

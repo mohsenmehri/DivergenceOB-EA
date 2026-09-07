@@ -969,6 +969,9 @@ input int      inp_cf_mode            = 0;   // CF mode: 0=M0 baseline (log only
 input double   inp_cf_q75_atr_pct_34  = 0.0; // FROZEN DEV_Q75 of M1_ATR_PCT_PRICE on M0 decision-attempt rows StepFrom=3 (from rule_freeze.json)
 input double   inp_cf_q75_adx_34      = 0.0; // FROZEN DEV_Q75 of M1_ADX on M0 decision-attempt rows StepFrom=3 (M2 only)
 input double   inp_cf_q75_atr_pct_23  = 0.0; // FROZEN DEV_Q75 of M1_ATR_PCT_PRICE on M0 decision-attempt rows StepFrom=2 (M3 only)
+// M0 Shift-1 population collection (Threshold Derivation). Observation-only:
+// does NOT apply any C2/M2 veto and does NOT use CF_ShouldVeto/CF_LogEvent.
+input bool     inp_c2m2_collect_shift1_m0 = false;
 
 input int      inp_rsi_period        = 14;
 input int      inp_adx_period        = 14;
@@ -19343,9 +19346,15 @@ void CF_LogEvent(int setup_idx, int step_from, int step_to, bool is_bull,
 #define C2M2_DI_ADVERSE_DELTA             0.0
 #define C2M2_STEP_FROM                    3
 #define C2M2_STEP_TO                      4
-#define C2M2_PROVENANCE_SOURCE_COMMIT     "29dfb1529293c10b364014464977a150074da25f"
+#define C2M2_PROVENANCE_SOURCE_COMMIT     "061a1bb47c5bc7768f66cc9dec291d5c5e8b7135"
 #define C2M2_PROVENANCE_SPEC_VERSION      "C2_M2_IMPLEMENTATION_REPAIR_SPEC_V1"
 #define C2M2_PROVENANCE_BUILD             "C2M2_REPAIR_V1"
+// M0 collection provenance: actual upstream source commit, NOT the 29dfb15
+// baseline. The exact instrumented-source SHA-256 is recorded in the pre-run
+// instrumentation report (C2_M2_M0_COLLECT_PRE_RUN_INSTRUMENTATION_V1.md).
+#define C2M2_M0COLLECT_SOURCE_COMMIT      "061a1bb47c5bc7768f66cc9dec291d5c5e8b7135"
+#define C2M2_M0COLLECT_SPEC_VERSION       "C2_M2_M0_POPULATION_COLLECTION_V1"
+#define C2M2_M0COLLECT_BUILD              "C2M2_M0COLLECT_V1"
 
 enum ENUM_C2M2_LATCH
 {
@@ -19365,17 +19374,18 @@ void C2M2_LogStep34Decision(int setup_idx, int step_from, int step_to, bool is_b
                             int feature_shift, datetime bar_open, datetime bar_close,
                             double atr, double atr_pct, double adx, double pdi, double mdi,
                             double price_ref, bool strict_before, string decision,
-                            string latch_status)
+                            string latch_status, string event_label, string rule_label,
+                            string output_file, string source_commit, string spec_version,
+                            string build)
 {
    if(setup_idx < 0 || setup_idx >= g_setup_cnt) return;
    static int fh = INVALID_HANDLE;
    if(fh == INVALID_HANDLE)
    {
-      string path = "C2M2_Step34_Decisions_m" + IntegerToString(inp_cf_mode) + ".csv";
+      string path = output_file;
       // Diagnostic export fix: write to FILE_COMMON like every other run export
       // (SafeOpenCSV uses FILE_COMMON), so the file is recovered in the result
-      // folder. Previously it opened the terminal-local non-common path and the
-      // C2/M2 evidence was not returned with the run outputs.
+      // folder.
       fh = FileOpen(path, FILE_WRITE | FILE_CSV | FILE_ANSI | FILE_SHARE_READ | FILE_COMMON, ';');
       if(fh == INVALID_HANDLE)
       {
@@ -19390,7 +19400,7 @@ void C2M2_LogStep34Decision(int setup_idx, int step_from, int step_to, bool is_b
          "SourceCommit;SpecVersion;Build\n");
    }
    if(fh == INVALID_HANDLE) return;
-   string row = "C2M2_DECISION;"
+   string row = event_label + ";"
       + IntegerToString(g_setups[setup_idx].setup_id) + ";"
       + IntegerToString(step_from) + ";" + IntegerToString(step_to) + ";"
       + TimeToString(t_decision, TIME_DATE | TIME_SECONDS) + ";"
@@ -19407,10 +19417,10 @@ void C2M2_LogStep34Decision(int setup_idx, int step_from, int step_to, bool is_b
       + (strict_before ? "true" : "false") + ";"
       + decision + ";" + latch_status + ";"
       + (is_bull ? "BUY" : "SELL") + ";"
-      + IntegerToString(inp_cf_mode) + ";M2;"
-      + C2M2_PROVENANCE_SOURCE_COMMIT + ";"
-      + C2M2_PROVENANCE_SPEC_VERSION + ";"
-      + C2M2_PROVENANCE_BUILD;
+      + IntegerToString(inp_cf_mode) + ";" + rule_label + ";"
+      + source_commit + ";"
+      + spec_version + ";"
+      + build;
    FileWriteString(fh, row + "\n");
    static int c2m2_rows = 0;
    c2m2_rows++;
@@ -19438,7 +19448,9 @@ bool C2M2_Step34ShouldVeto(int setup_idx, bool is_bull, const MqlTick &tk)
       g_setups[setup_idx].c2m2_step34_latch_time = t_decision;
       C2M2_LogStep34Decision(setup_idx, C2M2_STEP_FROM, C2M2_STEP_TO, is_bull, tk,
          t_decision, t_server, C2M2_FEATURE_SHIFT, 0, 0,
-         0.0, 0.0, 0.0, 0.0, 0.0, 0.0, false, "INVALID", "FIRST");
+         0.0, 0.0, 0.0, 0.0, 0.0, 0.0, false, "INVALID", "FIRST",
+         "C2M2_DECISION", "M2", "C2M2_Step34_Decisions_m" + IntegerToString(inp_cf_mode) + ".csv",
+         C2M2_PROVENANCE_SOURCE_COMMIT, C2M2_PROVENANCE_SPEC_VERSION, C2M2_PROVENANCE_BUILD);
       return false;                              // fail-open, never blocks ladder
    }
 
@@ -19466,7 +19478,9 @@ bool C2M2_Step34ShouldVeto(int setup_idx, bool is_bull, const MqlTick &tk)
       g_setups[setup_idx].c2m2_step34_latch_time = t_decision;
       C2M2_LogStep34Decision(setup_idx, C2M2_STEP_FROM, C2M2_STEP_TO, is_bull, tk,
          t_decision, t_server, C2M2_FEATURE_SHIFT, bar_open, bar_close,
-         atr, atr_pct, adx, pdi, mdi, price_ref, strict_before, "INVALID", "FIRST");
+         atr, atr_pct, adx, pdi, mdi, price_ref, strict_before, "INVALID", "FIRST",
+         "C2M2_DECISION", "M2", "C2M2_Step34_Decisions_m" + IntegerToString(inp_cf_mode) + ".csv",
+         C2M2_PROVENANCE_SOURCE_COMMIT, C2M2_PROVENANCE_SPEC_VERSION, C2M2_PROVENANCE_BUILD);
       return false;                              // fail-open, never blocks ladder
    }
 
@@ -19482,8 +19496,75 @@ bool C2M2_Step34ShouldVeto(int setup_idx, bool is_bull, const MqlTick &tk)
    C2M2_LogStep34Decision(setup_idx, C2M2_STEP_FROM, C2M2_STEP_TO, is_bull, tk,
       t_decision, t_server, C2M2_FEATURE_SHIFT, bar_open, bar_close,
       atr, atr_pct, adx, pdi, mdi, price_ref, strict_before,
-      veto ? "VETO" : "ALLOW", "FIRST");
+      veto ? "VETO" : "ALLOW", "FIRST",
+      "C2M2_DECISION", "M2", "C2M2_Step34_Decisions_m" + IntegerToString(inp_cf_mode) + ".csv",
+      C2M2_PROVENANCE_SOURCE_COMMIT, C2M2_PROVENANCE_SPEC_VERSION, C2M2_PROVENANCE_BUILD);
    return veto;
+}
+
+// ============================================================================
+// C2/M2 M0 SHIFT-1 POPULATION COLLECTION (threshold-derivation population).
+// Observation-only. It does NOT call CF_ShouldVeto/CF_LogEvent and never
+// applies a veto. It records the first valid Event=A Step3->4 decision per
+// setup with FeatureShift=1 and strict BarCloseTime_Shift1 < T_decision.
+// ============================================================================
+bool C2M2_CollectM0Step34Decision(int setup_idx, bool is_bull, const MqlTick &tk)
+{
+   if(inp_cf_mode != 0) return false;              // M0 collection only
+   if(!inp_c2m2_collect_shift1_m0) return false;   // switch off by default
+   if(setup_idx < 0 || setup_idx >= g_setup_cnt) return false;
+   if(g_setups[setup_idx].current_step != C2M2_STEP_FROM) return false;
+
+   // Latch: only ALLOW is used here (collection invariant). Once collected,
+   // later ticks are suppressed; no re-evaluation / duplicate row.
+   if(g_setups[setup_idx].c2m2_step34_latch == C2M2_LATCH_ALLOW) return false;
+   if(g_setups[setup_idx].c2m2_step34_latch == C2M2_LATCH_VETO ||
+      g_setups[setup_idx].c2m2_step34_latch == C2M2_LATCH_INVALID) return false;
+
+   datetime t_decision = tk.time;                  // T_decision = tick.time
+   datetime t_server   = TimeCurrent();
+
+   // DEV-only guard for the derivation population. The collection file must
+   // contain only decisions inside the approved DEV window; OOS rows are never
+   // written and have no effect on M0 execution.
+   datetime t_dev_start = StringToTime("2014.01.01 00:00:00");
+   datetime t_dev_end   = StringToTime("2023.12.31 23:59:59");
+   if(t_decision < t_dev_start || t_decision > t_dev_end) return false;
+
+   int mi = TF_IDX_MAIN;                           // M1
+   if(!g_tf[mi].CopyIndicatorBuffers(MIN_BUFFER_DEPTH))
+      return false;                                // do not latch; later tick may succeed
+
+   datetime bar_open  = iTime(_Symbol, g_tf[mi].timeframe, C2M2_FEATURE_SHIFT);
+   datetime bar_close = bar_open + PeriodSeconds(g_tf[mi].timeframe);
+   double price_ref   = iClose(_Symbol, g_tf[mi].timeframe, C2M2_FEATURE_SHIFT);
+   double atr         = g_tf[mi].GetBufferValue(g_tf[mi].buffer_atr, C2M2_FEATURE_SHIFT);
+   double adx         = g_tf[mi].GetBufferValue(g_tf[mi].buffer_adx, C2M2_FEATURE_SHIFT);
+   double pdi         = g_tf[mi].GetBufferValue(g_tf[mi].buffer_plus_di, C2M2_FEATURE_SHIFT);
+   double mdi         = g_tf[mi].GetBufferValue(g_tf[mi].buffer_minus_di, C2M2_FEATURE_SHIFT);
+   double atr_pct     = (price_ref > 0.0 && atr > 0.0) ? (atr * 100.0 / price_ref) : 0.0;
+
+   bool strict_before = (bar_close < t_decision);
+   bool ok_data = (C2M2_IsValidNumber(price_ref) && price_ref > 0.0 &&
+                   C2M2_IsValidNumber(atr)     && atr  > 0.0 &&
+                   C2M2_IsValidNumber(adx)     && adx >= 0.0 &&
+                   C2M2_IsValidNumber(pdi)     && pdi >= 0.0 &&
+                   C2M2_IsValidNumber(mdi)     && mdi >= 0.0);
+
+   // Only valid rows become the population. Invalid/strict-before-failing
+   // ticks are ignored and no latch is set, so a later valid tick can be used.
+   if(!ok_data || !strict_before)
+      return false;
+
+   g_setups[setup_idx].c2m2_step34_latch      = C2M2_LATCH_ALLOW;
+   g_setups[setup_idx].c2m2_step34_latch_time = t_decision;
+   C2M2_LogStep34Decision(setup_idx, C2M2_STEP_FROM, C2M2_STEP_TO, is_bull, tk,
+      t_decision, t_server, C2M2_FEATURE_SHIFT, bar_open, bar_close,
+      atr, atr_pct, adx, pdi, mdi, price_ref, strict_before,
+      "ALLOW", "FIRST",
+      "A", "M0_COLLECT", "C2M2_M0_Shift1_Population_DEV.csv",
+      C2M2_M0COLLECT_SOURCE_COMMIT, C2M2_M0COLLECT_SPEC_VERSION, C2M2_M0COLLECT_BUILD);
+   return false;                                  // never vetoes
 }
 
 bool CreateSetupWithPrediction(bool is_bull, double &ent[], double &be[], double &tp[], double dist)
@@ -42590,9 +42671,17 @@ void ManagePositions(int idx)
       // =====
       // C2/M2 Repair V1 (Owner-approved D1-D12, d_DI=0): Step3->4 M2 is isolated
       // from the shared CF_ShouldVeto/CF_LogEvent path so M0/M1/M3 are unchanged.
+      // M0 Shift-1 population collection also uses a separate observation-only
+      // path and never applies a veto.
       bool cf_veto   = false;
+      bool is_m0collect = (inp_cf_mode == 0 && inp_c2m2_collect_shift1_m0 &&
+                           cur_step == 3 && next == 4);
       bool is_c2m2   = (inp_cf_mode == 2 && cur_step == 3 && next == 4);
-      if(is_c2m2)
+      if(is_m0collect)
+      {
+         cf_veto = C2M2_CollectM0Step34Decision(idx, is_bull, tk);
+      }
+      else if(is_c2m2)
       {
          cf_veto = C2M2_Step34ShouldVeto(idx, is_bull, tk);
       }

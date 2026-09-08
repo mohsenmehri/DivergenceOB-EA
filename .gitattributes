@@ -5,3 +5,4 @@ v2_research_export_v1_CONTROL_REGEN_A1/*.csv -filter -diff -merge -text
 v2_research_export_v2_cfv2/*.csv -filter -diff -merge -text
 v2_research_export_v2_cfv2/*.xlsx -filter -diff -merge -text
 v2_research_export_v2_cfv2/*.log -filter -diff -merge -text
+v2_research_export_v2_cfv2/20260908.log filter=lfs diff=lfs merge=lfs -text

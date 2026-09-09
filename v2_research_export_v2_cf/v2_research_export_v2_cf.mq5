@@ -19434,9 +19434,11 @@ bool C2M2_Step34ShouldVeto(int setup_idx, bool is_bull, const MqlTick &tk)
    if(g_setups[setup_idx].current_step != C2M2_STEP_FROM) return false;
 
    // LATCH (Owner-approved D5 Option B): independent of PlaceEntry retry.
+   // INVALID is FAIL-CLOSED (Owner final decision): an INVALID decision
+   // latches and blocks Step4; placement retry must NOT turn it into ALLOW.
    if(g_setups[setup_idx].c2m2_step34_latch == C2M2_LATCH_VETO)    return true;
    if(g_setups[setup_idx].c2m2_step34_latch == C2M2_LATCH_ALLOW)   return false;
-   if(g_setups[setup_idx].c2m2_step34_latch == C2M2_LATCH_INVALID) return false;
+   if(g_setups[setup_idx].c2m2_step34_latch == C2M2_LATCH_INVALID) return true;
 
    // T_decision authority (Owner-approved D2): use tick.time.
    datetime t_decision = tk.time;
@@ -19451,7 +19453,7 @@ bool C2M2_Step34ShouldVeto(int setup_idx, bool is_bull, const MqlTick &tk)
          0.0, 0.0, 0.0, 0.0, 0.0, 0.0, false, "INVALID", "FIRST",
          "C2M2_DECISION", "M2", "C2M2_Step34_Decisions_m" + IntegerToString(inp_cf_mode) + ".csv",
          C2M2_PROVENANCE_SOURCE_COMMIT, C2M2_PROVENANCE_SPEC_VERSION, C2M2_PROVENANCE_BUILD);
-      return false;                              // fail-open, never blocks ladder
+      return true;                               // FAIL-CLOSED: INVALID blocks Step4
    }
 
    datetime bar_open  = iTime(_Symbol, g_tf[mi].timeframe, C2M2_FEATURE_SHIFT);
@@ -19481,7 +19483,7 @@ bool C2M2_Step34ShouldVeto(int setup_idx, bool is_bull, const MqlTick &tk)
          atr, atr_pct, adx, pdi, mdi, price_ref, strict_before, "INVALID", "FIRST",
          "C2M2_DECISION", "M2", "C2M2_Step34_Decisions_m" + IntegerToString(inp_cf_mode) + ".csv",
          C2M2_PROVENANCE_SOURCE_COMMIT, C2M2_PROVENANCE_SPEC_VERSION, C2M2_PROVENANCE_BUILD);
-      return false;                              // fail-open, never blocks ladder
+      return true;                               // FAIL-CLOSED: INVALID blocks Step4
    }
 
    // C2/M2 rule (unchanged): High-ATR + High-ADX + adverse DI, Delta d_DI = 0.

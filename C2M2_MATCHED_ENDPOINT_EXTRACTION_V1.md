@@ -1,5 +1,8 @@
 # Matched M0 vs M2 — Endpoint Extraction (setup-level, V1)
 
+> **Owner Gate Confirmation (2026-09-10):** Endpoint extraction = **PASS**؛ Causal inference = NOT PERFORMED؛ p-value/bootstrap/regression = NOT PERFORMED؛ Threshold/Code/Strategy change = NO؛ New backtest = NO. Production = M0.
+> قواعد مهر و موم: (۱) تمرکز اختلاف matched در 49 ردیف VETO صرفاً یک **accounting identity** است و اثباتِ causal benefit برای VETO نیست؛ (۲) **MAE/MFE و DeepStop در setup-level قابل اثبات نیستند** — join یا بازسازی از PositionOpenSummary به setup-level فقط با mapping مستقل و قابل‌بازتولید مجاز است؛ (۳) منشأ gap «Dataset PnL در برابر MT5 Tester PnL» در این مرحله تعیین نشده و **به swap، commission یا هیچ عامل مشخص دیگری نسبت داده نمی‌شود** (این قاعده جایگزین عبارت‌های احتمالیِ گزارش‌های قبلی می‌شود).
+
 تاریخ: 2026-09-10 — وضعیت: **Descriptive-Only**؛ فقط از داده‌های موجود M0/M2.
 محرمات رعایت‌شده: NO NEW BACKTEST / NO CODE CHANGE / NO THRESHOLD CHANGE / NO STRATEGY CHANGE / NO FEATURE SELECTION / NO OPTIMIZATION؛ بدون p-value/regression/bootstrap/hypothesis test؛ بدون هیچ ادعای causal (بخش VETO/ALLOW صرفاً reporting توصیفی است).
 
@@ -72,7 +75,7 @@
 | Σ SetupFinalProfit (dataset) | **−626.69** | **−1,441.12** | layer-separated؛ index ها با فایل‌ها verify |
 | MT5 Total Net Profit (xlsx) | **−800.19** | **−1,614.62** | لایهٔ رسمی MT5 — هرگز با لایهٔ بالا مخلوط نشده |
 | MT5 Profit Factor | 0.979276 | 0.957556 | توصیفی |
-| gap (MT5 − dataset) | −173.50 | −173.50 | احتمالاً swap/commission؛ تطبیق دقیق NOT PROVEN |
+| gap (MT5 − dataset) | −173.50 | −173.50 | **منشأ gap در این مرحله تعیین نشده و به swap / commission یا عامل مشخص دیگری نسبت داده نمی‌شود (NOT DETERMINED)** |
 
 Identity (reconciliation قابل‌بازآزمایی): matched + only = کل: M0: −743.07 + (+116.38) = −626.69 ✅؛ M2: −1,456.25 + (+15.13) = −1,441.12 ✅. و داخل matched: policy-difference‌الجهتِ dataset (M2−M0 = −713.18) زیرمجموعه‌ای از gap کل runهاست: −1,441.12 − (−626.69) = −814.43 = ΣD(VETO) −713.18 + (M2-only − M0-only مجموع = 15.13 − 116.38 = −101.25) ✅ ⇒ **بسته با باقی‌ماندهٔ صفر**.
 

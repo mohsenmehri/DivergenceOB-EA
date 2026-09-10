@@ -1,6 +1,11 @@
 # Matched M0 vs M2 — SetupID-Level Reconciliation (V1)
 
 تاریخ: 2026-09-10 — وضعیت: **کامل، بدون هیچ code/threshold/strategy change**
+
+> **Owner Confirmation (2026-09-10):** reconciliation موردنظر تأیید شد. فرمولهٔ نهایی تصویبی:
+> *«اختلاف کل Step4 بین M0 و M2 برابر 55 است؛ این اختلاف شامل 49 مورد در matched population، همگی متناظر با VETO، و 6 مورد از M0-only population است.»*
+> اعداد تأییدشده: matched=4,778؛ Step4 مچ‌شده: M0=425 / M2=376؛ M0-only=86 (6 قطعه Step4)؛ M2-only=4 (صفر Step4)؛ M0 total=431، M2 total=376.
+> **Boundary:** از این اعداد هیچ نتیجه‌ای دربارهٔ causal effect، جلوگیری از loss یا Deep Stop استخراج نمی‌شود (association-only).
 منابع (فقط دادهٔ خام، اغلب دوطرفه از کامیت‌ها):
 - Matched M0: کامیت `3352b18` پوشهٔ `M0/` (PO: 27,228,623B، Labels، Lifecycle, Manifest، ReportTester.xlsx 4,127,648B)
 - M2: کامیت `0e91848…` پوشهٔ `v2_research_export_v2_cfv2/` (PO: 26,595,883B، C2M2_Decisions 114,790B، ReportTester.xlsx 4,036,724B)

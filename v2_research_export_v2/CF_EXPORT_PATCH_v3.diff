@@ -1,0 +1,125 @@
+diff --git a/v2_research_export_v2/v2_research_export_v2_cf.mq5 b/v2_research_export_v2/v2_research_export_v2_cf.mq5
+index c3e78e5..f0f08a6 100644
+--- a/v2_research_export_v2/v2_research_export_v2_cf.mq5
++++ b/v2_research_export_v2/v2_research_export_v2_cf.mq5
+@@ -19210,7 +19210,28 @@ void ExportPositionOpenSummaryReport()
+ // ============================================================================
+ // CF EXPERIMENT (research-only build) — decision-time snapshot, VETO gate,
+ // event log. Freeze v2 (2026-09-04). Logging must never alter trading logic.
++// v3 export/observability patch (2026-09-04): deterministic FILE_COMMON
++// output, open/write/close diagnostics, lifecycle counters. No strategy,
++// veto, rule or threshold code is touched by this patch.
+ // ============================================================================
++// CF exporter state (file-scope so OnDeinit can flush/close and report).
++int    g_cf_fh        = INVALID_HANDLE; // CF event CSV handle (Common\Files)
++int    g_cf_rows      = 0;              // data rows actually written
++bool   g_cf_init_done = false;          // CF_EXPORT_INIT already emitted once
++string g_cf_fname     = "";             // CF_events_m<inp_cf_mode>.csv
++
++// Deterministic full Windows path of the FILE_COMMON export file, identical
++// in the Strategy Tester and in the live terminal:
++// <TERMINAL_COMMONDATA_PATH>\Files\CF_events_m<mode>.csv
++// e.g. C:\Users\<user>\AppData\Roaming\MetaQuotes\Terminal\Common\Files\CF_events_m0.csv
++string CF_FullExportPath(const string fname)
++{
++   string dir = TerminalInfoString(TERMINAL_COMMONDATA_PATH);
++   if(StringLen(dir) > 0 && StringGetCharacter(dir, StringLen(dir) - 1) != '\\')
++      dir += "\\";
++   return dir + "Files\\" + fname;
++}
++
+ bool CF_ShouldVeto(int cur_step, int next, bool is_bull)
+ {
+    if(inp_cf_mode <= 0) return false;                 // M0: no veto ever
+@@ -19244,18 +19265,41 @@ void CF_LogEvent(int setup_idx, int step_from, int step_to, bool is_bull,
+                  double fill_price, datetime fill_time)
+ {
+    if(setup_idx < 0 || setup_idx >= g_setup_cnt) return;
+-   static int fh = INVALID_HANDLE;
+-   if(fh == INVALID_HANDLE)
++   if(!g_cf_init_done)
+    {
+-      string path = "CF_events_m" + IntegerToString(inp_cf_mode) + ".csv";
+-      fh = FileOpen(path, FILE_WRITE | FILE_CSV | FILE_ANSI | FILE_SHARE_READ, ';');
+-      if(fh != INVALID_HANDLE)
+-         FileWriteString(fh,
++      g_cf_init_done = true;
++      g_cf_fname = "CF_events_m" + IntegerToString(inp_cf_mode) + ".csv";
++      Print("CF_EXPORT_INIT|Mode=", IntegerToString(inp_cf_mode),
++            "|File=", g_cf_fname, "|Common=true");
++   }
++   if(g_cf_fh == INVALID_HANDLE)
++   {
++      // FILE_COMMON: deterministic location = terminal Common\Files folder
++      // (shared with the Strategy Tester), same place as every other export
++      // of this build. Filename unchanged: CF_events_m<mode>.csv.
++      g_cf_fh = FileOpen(g_cf_fname,
++                         FILE_WRITE | FILE_CSV | FILE_ANSI | FILE_SHARE_READ | FILE_COMMON, ';');
++      if(g_cf_fh == INVALID_HANDLE)
++      {
++         Print("CF_EXPORT_OPEN_FAIL|File=", CF_FullExportPath(g_cf_fname),
++               "|Error=", IntegerToString(GetLastError()));
++         return;
++      }
++      Print("CF_EXPORT_OPEN_OK|File=", CF_FullExportPath(g_cf_fname),
++            "|Handle=", IntegerToString(g_cf_fh));
++      uint hdr_bytes = FileWriteString(g_cf_fh,
+             "Event;SetupID;DecisionTime;StepFrom;StepTo;Direction;Bid;Ask;SpreadPoints;"
+             "ATR;ATRPct100;ATRRegime;ADX;DIPlus;DIMinus;RSI;MACDHist;EMA200DistATR;EMA200Slope5ATR;"
+             "FloatingPnLNoCost;OpenPositions;BasketBE;Session;OpenHour;Mode;Rule;FillPrice;FillTime\n");
++      if(hdr_bytes <= 0)
++      {
++         Print("CF_EXPORT_HEADER_FAIL|File=", CF_FullExportPath(g_cf_fname),
++               "|Error=", IntegerToString(GetLastError()));
++         FileClose(g_cf_fh);
++         g_cf_fh = INVALID_HANDLE;
++         return;
++      }
+    }
+-   if(fh == INVALID_HANDLE) return;
+    int mi = TF_IDX_MAIN;                                  // M1
+    g_tf[mi].CopyIndicatorBuffers(MIN_BUFFER_DEPTH);
+    double price_tf = iClose(_Symbol, g_tf[mi].timeframe, 0);
+@@ -19321,10 +19365,17 @@ void CF_LogEvent(int setup_idx, int step_from, int step_to, bool is_bull,
+       + IntegerToString(dt.hour) + ";" + IntegerToString(inp_cf_mode) + ";" + rule + ";"
+       + DoubleToString(fill_price, _Digits) + ";"
+       + (fill_time > 0 ? TimeToString(fill_time, TIME_DATE | TIME_SECONDS) : "");
+-   FileWriteString(fh, row + "\n");
+-   static int cf_rows = 0;
+-   cf_rows++;
+-   if((cf_rows % 500) == 0) FileFlush(fh);
++   uint wb = FileWriteString(g_cf_fh, row + "\n");
++   if(wb > 0)
++   {
++      g_cf_rows++;
++      if((g_cf_rows % 500) == 0) FileFlush(g_cf_fh);
++   }
++   else
++   {
++      Print("CF_EXPORT_WRITE_FAIL|File=", CF_FullExportPath(g_cf_fname),
++            "|Error=", IntegerToString(GetLastError()));
++   }
+ }
+ 
+ bool CreateSetupWithPrediction(bool is_bull, double &ent[], double &be[], double &tp[], double dist)
+@@ -45082,6 +45133,20 @@ void S2D_HandleTrueForwardOnDeinit(const int reason)
+ void OnDeinit(const int reason)
+ {
+    EventKillTimer();
++   // CF exporter lifecycle (research-only export/observability patch v3).
++   // Runs FIRST so flush/close/final counters survive any audit-only early
++   // return below. No strategy code is involved.
++   if(g_cf_fh != INVALID_HANDLE)
++   {
++      FileFlush(g_cf_fh);
++      FileClose(g_cf_fh);
++      g_cf_fh = INVALID_HANDLE;
++      Print("CF_EXPORT_CLOSE|Rows=", IntegerToString(g_cf_rows));
++   }
++   if(g_cf_init_done)
++      Print("CF_EXPORT_FINAL|Mode=", IntegerToString(inp_cf_mode),
++            "|Rows=", IntegerToString(g_cf_rows),
++            "|Path=", CF_FullExportPath(g_cf_fname));
+    if(inp_div3_span_shadow_enabled && inp_div3_span_shadow_audit_only && !g_div3_span_shadow_runtime_ready)
+    {
+       Print("DIV3_SPAN_SHADOW|DEINIT_SKIPPED|Reason=INIT_NOT_READY|FilesCreated=0");

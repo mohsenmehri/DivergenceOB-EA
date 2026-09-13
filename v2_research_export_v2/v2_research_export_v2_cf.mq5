@@ -964,6 +964,12 @@ input double   inp_max_loss_dollars  = 300.0;
 input double   inp_broker_protection_sl_atr = 0.0;  // FIX-E2: 0=off (keeps backtest parity); >0 = wide broker-side disaster SL at N*ATR on every entry (recommend >= 4.0 for live)
 input int      inp_atr_period        = 4;
 input double   inp_atr_multiplier    = 2.5;
+input group "=============== CF EXPERIMENT (research-only build; Freeze v2 2026-09-04) ==============="
+input int      inp_cf_mode            = 0;   // CF mode: 0=M0 baseline (log only), 1=M1 veto 3->4 ATR-HIGH, 2=M2 (EXPLORATORY) +ADX/DI-adverse, 3=M3 veto 2->3 ATR-HIGH
+input double   inp_cf_q75_atr_pct_34  = 0.0; // FROZEN DEV_Q75 of M1_ATR_PCT_PRICE on M0 decision-attempt rows StepFrom=3 (from rule_freeze.json)
+input double   inp_cf_q75_adx_34      = 0.0; // FROZEN DEV_Q75 of M1_ADX on M0 decision-attempt rows StepFrom=3 (M2 only)
+input double   inp_cf_q75_atr_pct_23  = 0.0; // FROZEN DEV_Q75 of M1_ATR_PCT_PRICE on M0 decision-attempt rows StepFrom=2 (M3 only)
+
 input int      inp_rsi_period        = 14;
 input int      inp_adx_period        = 14;
 input int      inp_cci_period        = 14;
@@ -19201,6 +19207,177 @@ void ExportPositionOpenSummaryReport()
    FileClose(h);
    Print("Position open summary exported: ", fn);
 }
+// ============================================================================
+// CF EXPERIMENT (research-only build) — decision-time snapshot, VETO gate,
+// event log. Freeze v2 (2026-09-04). Logging must never alter trading logic.
+// v3 export/observability patch (2026-09-04): deterministic FILE_COMMON
+// output, open/write/close diagnostics, lifecycle counters. No strategy,
+// veto, rule or threshold code is touched by this patch.
+// ============================================================================
+// CF exporter state (file-scope so OnDeinit can flush/close and report).
+int    g_cf_fh        = INVALID_HANDLE; // CF event CSV handle (Common\Files)
+int    g_cf_rows      = 0;              // data rows actually written
+bool   g_cf_init_done = false;          // CF_EXPORT_INIT already emitted once
+string g_cf_fname     = "";             // CF_events_m<inp_cf_mode>.csv
+
+// Deterministic full Windows path of the FILE_COMMON export file, identical
+// in the Strategy Tester and in the live terminal:
+// <TERMINAL_COMMONDATA_PATH>\Files\CF_events_m<mode>.csv
+// e.g. C:\Users\<user>\AppData\Roaming\MetaQuotes\Terminal\Common\Files\CF_events_m0.csv
+string CF_FullExportPath(const string fname)
+{
+   string dir = TerminalInfoString(TERMINAL_COMMONDATA_PATH);
+   if(StringLen(dir) > 0 && StringGetCharacter(dir, StringLen(dir) - 1) != '\\')
+      dir += "\\";
+   return dir + "Files\\" + fname;
+}
+
+bool CF_ShouldVeto(int cur_step, int next, bool is_bull)
+{
+   if(inp_cf_mode <= 0) return false;                 // M0: no veto ever
+   if(next != 3 && next != 4) return false;           // only 2->3 (M3) and 3->4 (M1/M2)
+   int mi = TF_IDX_MAIN;                              // M1
+   g_tf[mi].CopyIndicatorBuffers(MIN_BUFFER_DEPTH);
+   double price_tf = iClose(_Symbol, g_tf[mi].timeframe, 0);
+   if(price_tf <= 0.0)
+      price_tf = is_bull ? SymbolInfoDouble(_Symbol, SYMBOL_BID)
+                         : SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   double atr     = g_tf[mi].GetBufferValue(g_tf[mi].buffer_atr, 0);
+   double adx     = g_tf[mi].GetBufferValue(g_tf[mi].buffer_adx, 0);
+   double pdi     = g_tf[mi].GetBufferValue(g_tf[mi].buffer_plus_di, 0);
+   double mdi     = g_tf[mi].GetBufferValue(g_tf[mi].buffer_minus_di, 0);
+   double atr_pct = (price_tf > 0.0 && atr > 0.0) ? (atr * 100.0 / price_tf) : 0.0;
+   bool high34 = (inp_cf_q75_atr_pct_34 > 0.0) && (atr_pct >= inp_cf_q75_atr_pct_34);
+   bool high23 = (inp_cf_q75_atr_pct_23 > 0.0) && (atr_pct >= inp_cf_q75_atr_pct_23);
+   if(inp_cf_mode == 1 && next == 4) return high34;                 // M1: ATR-HIGH at 3->4
+   if(inp_cf_mode == 3 && next == 3) return high23;                 // M3: ATR-HIGH at 2->3
+   if(inp_cf_mode == 2 && next == 4)                                 // M2 (EXPLORATORY)
+   {
+      bool high_adx    = (inp_cf_q75_adx_34 > 0.0) && (adx >= inp_cf_q75_adx_34);
+      bool di_against  = is_bull ? (mdi > pdi) : (pdi > mdi);
+      return high34 && high_adx && di_against;
+   }
+   return false;
+}
+
+void CF_LogEvent(int setup_idx, int step_from, int step_to, bool is_bull,
+                 const MqlTick &tk, string ev, string rule,
+                 double fill_price, datetime fill_time)
+{
+   if(setup_idx < 0 || setup_idx >= g_setup_cnt) return;
+   if(!g_cf_init_done)
+   {
+      g_cf_init_done = true;
+      g_cf_fname = "CF_events_m" + IntegerToString(inp_cf_mode) + ".csv";
+      Print("CF_EXPORT_INIT|Mode=", IntegerToString(inp_cf_mode),
+            "|File=", g_cf_fname, "|Common=true");
+   }
+   if(g_cf_fh == INVALID_HANDLE)
+   {
+      // FILE_COMMON: deterministic location = terminal Common\Files folder
+      // (shared with the Strategy Tester), same place as every other export
+      // of this build. Filename unchanged: CF_events_m<mode>.csv.
+      g_cf_fh = FileOpen(g_cf_fname,
+                         FILE_WRITE | FILE_CSV | FILE_ANSI | FILE_SHARE_READ | FILE_COMMON, ';');
+      if(g_cf_fh == INVALID_HANDLE)
+      {
+         Print("CF_EXPORT_OPEN_FAIL|File=", CF_FullExportPath(g_cf_fname),
+               "|Error=", IntegerToString(GetLastError()));
+         return;
+      }
+      Print("CF_EXPORT_OPEN_OK|File=", CF_FullExportPath(g_cf_fname),
+            "|Handle=", IntegerToString(g_cf_fh));
+      uint hdr_bytes = FileWriteString(g_cf_fh,
+            "Event;SetupID;DecisionTime;StepFrom;StepTo;Direction;Bid;Ask;SpreadPoints;"
+            "ATR;ATRPct100;ATRRegime;ADX;DIPlus;DIMinus;RSI;MACDHist;EMA200DistATR;EMA200Slope5ATR;"
+            "FloatingPnLNoCost;OpenPositions;BasketBE;Session;OpenHour;Mode;Rule;FillPrice;FillTime\n");
+      if(hdr_bytes <= 0)
+      {
+         Print("CF_EXPORT_HEADER_FAIL|File=", CF_FullExportPath(g_cf_fname),
+               "|Error=", IntegerToString(GetLastError()));
+         FileClose(g_cf_fh);
+         g_cf_fh = INVALID_HANDLE;
+         return;
+      }
+   }
+   int mi = TF_IDX_MAIN;                                  // M1
+   g_tf[mi].CopyIndicatorBuffers(MIN_BUFFER_DEPTH);
+   double price_tf = iClose(_Symbol, g_tf[mi].timeframe, 0);
+   if(price_tf <= 0.0) price_tf = (is_bull ? tk.bid : tk.ask);
+   double atr      = g_tf[mi].GetBufferValue(g_tf[mi].buffer_atr, 0);
+   double atr6     = g_tf[mi].GetBufferValue(g_tf[mi].buffer_atr, 5);
+   double adx      = g_tf[mi].GetBufferValue(g_tf[mi].buffer_adx, 0);
+   double pdi      = g_tf[mi].GetBufferValue(g_tf[mi].buffer_plus_di, 0);
+   double mdi      = g_tf[mi].GetBufferValue(g_tf[mi].buffer_minus_di, 0);
+   double rsi      = g_tf[mi].GetBufferValue(g_tf[mi].buffer_rsi, 0);
+   double macd     = 0.0;
+   if(g_tf[mi].handle_macd != INVALID_HANDLE)
+   {
+      double mm = g_tf[mi].GetBufferValue(g_tf[mi].buffer_macd_main, 0);
+      double ms = g_tf[mi].GetBufferValue(g_tf[mi].buffer_macd_signal, 0);
+      if(PO_ValidNum(mm) && PO_ValidNum(ms)) macd = mm - ms;
+   }
+   double e200      = g_tf[mi].GetBufferValue(g_tf[mi].buffer_ema_200, 0);
+   double e200_6    = g_tf[mi].GetBufferValue(g_tf[mi].buffer_ema_200, 5);
+   double atr_pct   = (price_tf > 0.0 && atr > 0.0) ? (atr * 100.0 / price_tf) : 0.0;
+   double regime    = (PO_ValidNum(atr6) && atr6 > 0.0) ? (atr / atr6) : 0.0;
+   double e200_dist = (atr > 0.0 && e200 > 0.0) ? ((price_tf - e200) / atr) : 0.0;
+   double e200_slp  = (atr > 0.0 && PO_ValidNum(e200_6)) ? ((e200 - e200_6) / (5.0 * atr)) : 0.0;
+   double floating  = 0.0;
+   int    pos_cnt   = 0;
+   string cf        = BuildComment(g_setups[setup_idx].setup_id);
+   for(int i = 0; i < PositionsTotal(); i++)
+   {
+      if(PositionGetSymbol(i) != _Symbol) continue;
+      if(PositionGetInteger(POSITION_MAGIC) != (long)inp_magic_number) continue;
+      if(PositionGetString(POSITION_COMMENT) != cf) continue;
+      floating += PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
+      pos_cnt++;
+   }
+   int cs = g_setups[setup_idx].current_step;
+   double basket_be = 0.0;
+   if(cs >= 2)
+   {
+      int be_idx = cs - 2;
+      if(be_idx < 0) be_idx = 0;
+      if(be_idx > 3) be_idx = 3;
+      basket_be = g_setups[setup_idx].break_even_levels[be_idx];
+   }
+   string session_name = "?";
+   int    session_id   = 0;
+   datetime now = TimeCurrent();
+   PO_GetSessionNameAndId(now, session_name, session_id);
+   MqlDateTime dt;
+   TimeToStruct(now, dt);
+   string row = ev + ";" + IntegerToString(g_setups[setup_idx].setup_id) + ";"
+      + TimeToString(now, TIME_DATE | TIME_SECONDS) + ";"
+      + IntegerToString(step_from) + ";" + IntegerToString(step_to) + ";"
+      + (is_bull ? "BUY" : "SELL") + ";"
+      + DoubleToString(tk.bid, _Digits) + ";" + DoubleToString(tk.ask, _Digits) + ";"
+      + DoubleToString((tk.ask - tk.bid) / _Point, 1) + ";"
+      + DoubleToString(atr, _Digits) + ";" + DoubleToString(atr_pct, 6) + ";"
+      + DoubleToString(regime, 4) + ";" + DoubleToString(adx, 4) + ";"
+      + DoubleToString(pdi, 4) + ";" + DoubleToString(mdi, 4) + ";"
+      + DoubleToString(rsi, 4) + ";" + DoubleToString(macd, 6) + ";"
+      + DoubleToString(e200_dist, 4) + ";" + DoubleToString(e200_slp, 6) + ";"
+      + DoubleToString(floating, 2) + ";" + IntegerToString(pos_cnt) + ";"
+      + DoubleToString(basket_be, _Digits) + ";" + session_name + ";"
+      + IntegerToString(dt.hour) + ";" + IntegerToString(inp_cf_mode) + ";" + rule + ";"
+      + DoubleToString(fill_price, _Digits) + ";"
+      + (fill_time > 0 ? TimeToString(fill_time, TIME_DATE | TIME_SECONDS) : "");
+   uint wb = FileWriteString(g_cf_fh, row + "\n");
+   if(wb > 0)
+   {
+      g_cf_rows++;
+      if((g_cf_rows % 500) == 0) FileFlush(g_cf_fh);
+   }
+   else
+   {
+      Print("CF_EXPORT_WRITE_FAIL|File=", CF_FullExportPath(g_cf_fname),
+            "|Error=", IntegerToString(GetLastError()));
+   }
+}
+
 bool CreateSetupWithPrediction(bool is_bull, double &ent[], double &be[], double &tp[], double dist)
 {
    if(!IsMarketOpen()|| !IsSpreadOK()) return false;
@@ -19249,7 +19426,13 @@ bool CreateSetupWithPrediction(bool is_bull, double &ent[], double &be[], double
    if(g_current_prediction.recommended_target == "TP1") init_target = TARGET_TP1;
    else if(g_current_prediction.recommended_target == "TP2") init_target = TARGET_TP2;
    g_current_smart_target.Initialize(ent[0], tp[0], tp[1], tp[2], ema200, init_target);
-   if(PlaceEntry(g_setups[idx].setup_id, is_bull, 1))
+      // CF (research-only): log step-1 decision attempt (no VETO on step 1).
+   {
+      MqlTick tk1;
+      if(SymbolInfoTick(_Symbol, tk1))
+         CF_LogEvent(idx, 0, 1, is_bull, tk1, "A", "NONE", 0.0, 0);
+   }
+if(PlaceEntry(g_setups[idx].setup_id, is_bull, 1))
    {
       g_setups[idx].is_active = true;
       g_setups[idx].current_step = 1;
@@ -42293,6 +42476,15 @@ void ManagePositions(int idx)
                     "| Free: "     + DoubleToString(free_margin, 2));
          return;
       }
+      // ===== CF EXPERIMENT (research-only) — decision-time VETO gate (Freeze v2).
+      // Applied exactly at the decision to place the next Step, after all
+      // entry gates and BEFORE any order send. No latch: every tick re-evaluated.
+      // =====
+      bool cf_veto = CF_ShouldVeto(cur_step, next, is_bull);
+      CF_LogEvent(idx, cur_step, next, is_bull, tk, cf_veto ? "V" : "A",
+                  cf_veto ? ("M" + IntegerToString(inp_cf_mode)) : "NONE", 0.0, 0);
+      if(cf_veto)
+         return;
       bool success  = false;
       int  attempts = 0;
       while(!success && attempts < MAX_TRADE_ATTEMPTS)
@@ -42313,6 +42505,8 @@ void ManagePositions(int idx)
       }
       if(success)
       {
+         CF_LogEvent(idx, cur_step, next, is_bull, tk, "P",
+                     "M" + IntegerToString(inp_cf_mode), 0.0, 0);
          g_setups[idx].current_step = next;
          g_setups[idx].max_step_reached = MathMax(g_setups[idx].max_step_reached, next);
          if(next>=1 && next<=5) g_profile_stats[(int)TestProfile].step_entries[next-1]++;
@@ -42324,6 +42518,8 @@ void ManagePositions(int idx)
             g_setups[idx].step_times[next - 1]  = fill_time;
             g_setups[idx].step_prices[next - 1] = fill_price;
          }
+         CF_LogEvent(idx, cur_step, next, is_bull, tk, "F",
+                     "M" + IntegerToString(inp_cf_mode), fill_price, fill_time);
          // v9.21: record position-open research snapshot (ladder step)
          RecordPositionOpenBySetup(idx, next,
                                    GetLatestSetupPositionId(g_setups[idx].setup_id),
@@ -42710,6 +42906,9 @@ void CheckTakeProfit(int idx)
    // estimated close cost and safety buffer is non-negative.
    if(g_setups[idx].current_step >= 4)
    {
+      // CF fix (research-only, Freeze v2): keep MAE/MFE/MaxDD fresh at Step>=4.
+      // Tracking/export only — logging fix != strategy change; no trade impact.
+      UpdateDrawdown(idx);
       double net_be_price = 0.0;
       double net_result_now = 0.0;
       double open_costs_signed = 0.0;
@@ -44934,6 +45133,20 @@ void S2D_HandleTrueForwardOnDeinit(const int reason)
 void OnDeinit(const int reason)
 {
    EventKillTimer();
+   // CF exporter lifecycle (research-only export/observability patch v3).
+   // Runs FIRST so flush/close/final counters survive any audit-only early
+   // return below. No strategy code is involved.
+   if(g_cf_fh != INVALID_HANDLE)
+   {
+      FileFlush(g_cf_fh);
+      FileClose(g_cf_fh);
+      g_cf_fh = INVALID_HANDLE;
+      Print("CF_EXPORT_CLOSE|Rows=", IntegerToString(g_cf_rows));
+   }
+   if(g_cf_init_done)
+      Print("CF_EXPORT_FINAL|Mode=", IntegerToString(inp_cf_mode),
+            "|Rows=", IntegerToString(g_cf_rows),
+            "|Path=", CF_FullExportPath(g_cf_fname));
    if(inp_div3_span_shadow_enabled && inp_div3_span_shadow_audit_only && !g_div3_span_shadow_runtime_ready)
    {
       Print("DIV3_SPAN_SHADOW|DEINIT_SKIPPED|Reason=INIT_NOT_READY|FilesCreated=0");
